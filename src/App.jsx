@@ -2,12 +2,46 @@ import { useEffect, useRef, useState } from 'react'
 import Hero from './components/Hero.jsx'
 import ReceiptForm from './components/ReceiptForm.jsx'
 import ReceiptList from './components/ReceiptList.jsx'
+import ConfigMissing from './components/ConfigMissing.jsx'
+import Login from './components/Login.jsx'
 import Topbar from './components/Topbar.jsx'
+import { createReceipt, deleteReceipt, fetchReceipts } from './lib/receipts.js'
+import { missingConfig, supabase } from './lib/supabase.js'
 
-// Étape 1 : tout vit dans l'état React. Au rechargement de la page, tout disparaît.
-// Les étapes suivantes ajouteront la connexion (étape 2), Supabase (étape 3) et l'IA (étape 4).
+// Pas de routeur : l'app bascule selon la session Supabase.
+// Configuration absente → message ; pas de session → connexion seule ; session → application.
 export default function App() {
+  const [session, setSession] = useState(undefined) // undefined = vérification en cours
+
+  useEffect(() => {
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null))
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next ?? null))
+    return () => data.subscription.unsubscribe()
+  }, [])
+
+  if (!supabase) return <ConfigMissing names={missingConfig} />
+  if (session === undefined) return null // le Splash couvre ce bref instant
+  if (!session) return <Login />
+  return <Board user={session.user} accessToken={session.access_token} onSignOut={() => supabase.auth.signOut()} />
+}
+
+// Les notes viennent de Supabase (table receipts protégée par RLS) ; les photos sont dans le bucket privé.
+function Board({ user, accessToken, onSignOut }) {
   const [receipts, setReceipts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchReceipts()
+      .then((rows) => !cancelled && setReceipts(rows))
+      .catch((err) => !cancelled && setError(err.message))
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [filter, setFilter] = useState(null) // catégorie sélectionnée dans la carte du total (null = toutes)
   const toggleFilter = (name) => setFilter((current) => (current === name ? null : name))
   const [sheetOpen, setSheetOpen] = useState(false) // mobile : feuille « Nouvelle note »
@@ -28,25 +62,45 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [sheetOpen])
 
-  function addReceipt(receipt) {
-    setReceipts((current) => [{ ...receipt, id: crypto.randomUUID(), created_at: new Date().toISOString() }, ...current])
+  // Lance une Error (message français) si l'enregistrement échoue : le formulaire reste ouvert, rien n'est perdu.
+  async function addReceipt({ file, ...fields }) {
+    const saved = await createReceipt({ userId: user.id, file, fields })
+    setReceipts((current) => [saved, ...current])
     setSheetOpen(false)
   }
 
-  function removeReceipt(receipt) {
-    setReceipts((current) => current.filter((r) => r.id !== receipt.id))
+  async function removeReceipt(receipt) {
+    setError('')
+    try {
+      await deleteReceipt(receipt)
+      setReceipts((current) => current.filter((r) => r.id !== receipt.id))
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   return (
     <>
-      <Topbar />
+      <Topbar user={user} onSignOut={onSignOut} />
       <main className="board">
         <div className="col-main">
           <Hero receipts={receipts} onScan={handleScan} activeCategory={filter} onFilter={toggleFilter} />
-          <ReceiptList category={filter} onClearFilter={() => setFilter(null)} receipts={receipts} onRemove={removeReceipt} />
+          {error && (
+            <p className="alert" role="alert">
+              {error}
+            </p>
+          )}
+          <ReceiptList
+            category={filter}
+            onClearFilter={() => setFilter(null)}
+            receipts={receipts}
+            loading={loading}
+            onRemove={removeReceipt}
+          />
         </div>
         <ReceiptForm
           ref={formRef}
+          accessToken={accessToken}
           open={sheetOpen}
           onFilePicked={() => setSheetOpen(true)}
           onClose={() => setSheetOpen(false)}

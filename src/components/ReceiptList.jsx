@@ -54,7 +54,7 @@ function ReceiptTile({ receipt: r, onRemove, onView, index }) {
       </div>
 
       <div className="tx-actions">
-        {r.image_url && (
+        {r.image_path && (
           <button type="button" className="tx-btn" onClick={() => onView(r)} aria-label={`Voir le justificatif ${r.merchant}`} title="Voir le justificatif">
             <Icon name="image" />
           </button>

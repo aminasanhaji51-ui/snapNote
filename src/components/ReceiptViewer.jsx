@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatEuro } from '../lib/amounts.js'
 import { formatDateTime, formatDayMonth } from '../lib/format.js'
+import { signedPhotoUrl } from '../lib/receipts.js'
 import Icon from './Icons.jsx'
 
 // Fenêtre qui affiche le justificatif d'une note, sur la même page (au lieu d'un nouvel onglet).
@@ -8,6 +9,18 @@ import Icon from './Icons.jsx'
 export default function ReceiptViewer({ receipt, onClose }) {
   const closeRef = useRef(null)
   const [loaded, setLoaded] = useState(false)
+  const [url, setUrl] = useState(null) // URL signée temporaire (le bucket est privé)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    signedPhotoUrl(receipt.image_path)
+      .then((u) => !cancelled && setUrl(u))
+      .catch(() => !cancelled && setFailed(true))
+    return () => {
+      cancelled = true
+    }
+  }, [receipt.image_path])
 
   useEffect(() => {
     const previous = document.activeElement
@@ -38,7 +51,12 @@ export default function ReceiptViewer({ receipt, onClose }) {
         </div>
 
         <div className={`viewer-photo${loaded ? ' loaded' : ''}`}>
-          <img src={receipt.image_url} alt={`Justificatif ${receipt.merchant}`} onLoad={() => setLoaded(true)} />
+          {url && <img src={url} alt={`Justificatif ${receipt.merchant}`} onLoad={() => setLoaded(true)} />}
+          {failed && (
+            <p className="alert" role="alert">
+              Justificatif indisponible pour le moment.
+            </p>
+          )}
           <i className="cn a" />
           <i className="cn b" />
           <i className="cn c" />
@@ -52,9 +70,11 @@ export default function ReceiptViewer({ receipt, onClose }) {
               Scanné par {receipt.user_email} · {formatDateTime(receipt.created_at)}
             </small>
           )}
-          <a className="viewer-link" href={receipt.image_url} target="_blank" rel="noreferrer">
-            Ouvrir dans un nouvel onglet
-          </a>
+          {url && (
+            <a className="viewer-link" href={url} target="_blank" rel="noreferrer">
+              Ouvrir dans un nouvel onglet
+            </a>
+          )}
         </div>
       </div>
     </div>
