@@ -1,0 +1,303 @@
+{
+  "name": "SnapNote - Note de frais vers comptable",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "snapnote-receipt",
+        "authentication": "headerAuth",
+        "options": {
+          "onlyRunIf": "={{ $json.body.type === \"INSERT\" }}"
+        }
+      },
+      "id": "fcae6a5c-9da3-44dc-8875-a48eb055916f",
+      "name": "Nouvelle note (Supabase)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-accountant",
+              "name": "accountantEmail",
+              "value": "comptable@example.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-from",
+              "name": "fromEmail",
+              "value": "snapnote@example.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-supabase",
+              "name": "supabaseUrl",
+              "value": "https://VOTRE-PROJET.supabase.co",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "127ea646-4e1f-45d2-9ac4-cabc6040cb5e",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        544,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $json.body || {};\nconst r = body.record || {};\n\n// Tout ce qui vient de l'IA ou de l'utilisateur est échappé : une enseigne ne doit jamais pouvoir injecter du HTML.\nconst esc = (v) => String(v === null || v === undefined ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\x22/g, '&quot;');\nconst eur = (v) => (v === null || v === undefined || v === '') ? 'n/c' : Number(v).toFixed(2).replace('.', ',') + ' €';\nconst day = (v) => v ? String(v).split('-').reverse().join('/') : 'n/c';\nconst scannedAt = r.created_at ? DateTime.fromISO(r.created_at).setZone('Europe/Paris').toFormat('dd/MM/yyyy à HH:mm') : 'n/c';\n\nconst COLORS = { Restaurant: '#d9602b', Transport: '#2f6fd0', Carburant: '#1a9aa6', Fournitures: '#7e9a2e', 'Hébergement': '#b24c6b', Autre: '#5f5a55' };\nconst merchant = esc(r.merchant || 'Enseigne inconnue');\nconst author = esc(r.user_email || 'inconnu');\nconst category = esc(r.category || 'Autre');\nconst dot = COLORS[r.category] || COLORS.Autre;\nconst ref = String(r.id || '').slice(0, 8).toUpperCase();\n// Pas de guillemets dans la pile de polices : ils fermeraient l'attribut style='…' du HTML.\nconst font = `font-family:Geist,-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;`;\n\nconst row = (label, value) => `<tr><td style='padding:14px 0;border-bottom:1px solid #2a2a2a;color:#9a938b;font-size:14px;${font}'>${label}</td><td align='right' style='padding:14px 0;border-bottom:1px solid #2a2a2a;color:#f6f2ec;font-size:14.5px;font-weight:500;${font}'>${value}</td></tr>`;\nconst badge = r.source === 'ai'\n  ? `<span style='display:inline-block;padding:4px 12px;border-radius:999px;background:#3a2214;color:#ff9a62;font-size:12.5px;font-weight:600'>Lecture automatique (IA)</span>`\n  : `<span style='display:inline-block;padding:4px 12px;border-radius:999px;background:#242424;color:#c9c3bb;font-size:12.5px;font-weight:600'>Saisie manuelle</span>`;\nconst strip = r.image_path ? 'Le justificatif est joint à cet email' : 'Aucune photo jointe à cette note';\n\nconst html = `<div style='display:none;max-height:0;overflow:hidden;opacity:0'>${merchant} - ${eur(r.amount_ttc)} - note de frais de ${author}</div>\n<table role='presentation' width='100%' cellpadding='0' cellspacing='0' bgcolor='#0a0a0a' style='background:#0a0a0a'><tr><td align='center' style='padding:28px 12px'>\n<table role='presentation' width='560' cellpadding='0' cellspacing='0' style='width:100%;max-width:560px'>\n<tr><td style='padding:0 6px 18px'><table role='presentation' cellpadding='0' cellspacing='0'><tr><td width='34' height='34' align='center' style='background:#ffffff;border-radius:50%;color:#0a0a0a;font-weight:700;font-size:16px;${font}'>S</td><td style='padding-left:10px;color:#f6f2ec;font-size:18px;font-weight:500;${font}'>SnapNote</td></tr></table></td></tr>\n<tr><td bgcolor='#161616' align='center' style='background:#161616;background-image:linear-gradient(180deg,#0f0f0f 0%,#161616 50%,#2b150b 85%,#80380f 100%);border-radius:28px;padding:30px 28px 28px;${font}'>\n<div style='color:#ff9a62;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:600'>Nouvelle note de frais</div>\n<div style='color:#f6f2ec;font-size:22px;font-weight:500;margin-top:10px'>${merchant}</div>\n<div style='color:#ffffff;font-size:54px;font-weight:300;letter-spacing:-.04em;line-height:1.1;margin:8px 0 10px'>${eur(r.amount_ttc)}</div>\n<div style='color:#9a938b;font-size:14px'>HT ${eur(r.amount_ht)} &nbsp;·&nbsp; TVA ${eur(r.amount_vat)}</div>\n</td></tr>\n<tr><td style='padding:0 14px'><table role='presentation' width='100%' cellpadding='0' cellspacing='0'><tr><td bgcolor='#d9602b' align='center' style='background:#d9602b;background-image:linear-gradient(180deg,#ee7a3f,#c9531f);border-radius:0 0 22px 22px;padding:14px 16px;color:#ffffff;font-size:14.5px;font-weight:500;${font}'>${strip}</td></tr></table></td></tr>\n<tr><td style='padding-top:18px'><table role='presentation' width='100%' cellpadding='0' cellspacing='0'><tr><td bgcolor='#121212' style='background:#121212;border-radius:22px;padding:6px 22px'>\n<table role='presentation' width='100%' cellpadding='0' cellspacing='0'>\n${row('Catégorie', `<span style='display:inline-block;width:9px;height:9px;border-radius:50%;background:${dot};margin-right:8px'></span>${category}`)}\n${row('Date du justificatif', day(r.receipt_date))}\n${row('Scanné par', `<a href='mailto:${author}' style='color:#ff9a62;text-decoration:none'>${author}</a>`)}\n${row('Scanné le', scannedAt)}\n${row('Saisie', badge)}\n</table></td></tr></table></td></tr>\n<tr><td align='center' style='padding:18px 8px 0;color:#6f6963;font-size:12px;${font}'>Email envoyé automatiquement par SnapNote · Référence ${ref}</td></tr>\n</table></td></tr></table>`;\n\nconst subject = ('Note de frais - ' + (r.merchant || 'sans enseigne') + ' - ' + eur(r.amount_ttc) + ' (' + (r.user_email || 'inconnu') + ')').replace(/[\\r\\n]+/g, ' ');\nreturn { json: { receiptId: r.id, subject: subject, html: html, hasImage: !!r.image_path, imagePath: r.image_path || '' } };\n"
+      },
+      "id": "6f1f7a09-acbc-4b3a-bfff-c968760c0c3a",
+      "name": "Préparer la note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.hasImage }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "2d27acce-b892-4ada-89c2-7ce84bb276eb"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cf99d0fd-1213-445d-a877-41a7f28b2437",
+      "name": "Photo disponible ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1152,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $(\"Configuration\").item.json.supabaseUrl }}/storage/v1/object/receipts/{{ $json.imagePath }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "6f2a9b07-eb83-4dc2-9fc7-6428420244ba",
+      "name": "Télécharger la photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1440,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $(\"Configuration\").item.json.fromEmail }}",
+        "toEmail": "={{ $(\"Configuration\").item.json.accountantEmail }}",
+        "subject": "={{ $(\"Préparer la note\").item.json.subject }}",
+        "html": "={{ $(\"Préparer la note\").item.json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "fileAttachments": "data"
+        }
+      },
+      "id": "c3464527-c12e-487c-ba43-8ea56574b528",
+      "name": "Envoyer au comptable (avec photo)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1744,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $(\"Configuration\").item.json.supabaseUrl }}/rest/v1/receipts?id=eq.{{ $(\"Préparer la note\").item.json.receiptId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"status\": \"sent\", \"sent_at\": \"{{ $now.toISO() }}\" }",
+        "options": {}
+      },
+      "id": "93987c62-1892-4a15-8417-c1b2560d50c5",
+      "name": "Marquer la note comme envoyée",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2048,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $(\"Configuration\").item.json.fromEmail }}",
+        "toEmail": "={{ $(\"Configuration\").item.json.accountantEmail }}",
+        "subject": "={{ $(\"Préparer la note\").item.json.subject }}",
+        "html": "={{ $(\"Préparer la note\").item.json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4477c2c9-0fbe-4616-87a1-9d5acdb675dc",
+      "name": "Envoyer au comptable (sans photo)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Mise en place\n1. **Configuration** : renseigner l’email du comptable, l’expéditeur et l’URL du projet Supabase.\n2. **Credentials** : secret du webhook (Header Auth), SMTP, et Supabase (Header Auth : nom apikey, valeur = clé secrète sb_secret_…). Jamais dans le front.\n3. **Supabase** : Database → Webhooks → table receipts, évènement Insert, méthode POST, URL de production de ce webhook, en-tête x-snapnote-secret.\n4. Publier le workflow.",
+        "height": 250,
+        "width": 620,
+        "color": 4
+      },
+      "id": "bc5751c9-96f9-4f2d-b5f5-d377948f4426",
+      "name": "Mise en place",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        192,
+        -144
+      ]
+    }
+  ],
+  "connections": {
+    "Nouvelle note (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Préparer la note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer la note": {
+      "main": [
+        [
+          {
+            "node": "Photo disponible ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo disponible ?": {
+      "main": [
+        [
+          {
+            "node": "Télécharger la photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Envoyer au comptable (sans photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Télécharger la photo": {
+      "main": [
+        [
+          {
+            "node": "Envoyer au comptable (avec photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envoyer au comptable (avec photo)": {
+      "main": [
+        [
+          {
+            "node": "Marquer la note comme envoyée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envoyer au comptable (sans photo)": {
+      "main": [
+        [
+          {
+            "node": "Marquer la note comme envoyée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
